@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRF Production Snapshot</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#10151b; --panel:#171d25; --panel2:#1d2530; --line:#2a3341;
+    --text:#eef1f4; --text2:#aab3c0; --text3:#6f7986;
+    --orange:#e4791f; --orange-dim:#3a2a1a; --green:#2fa972; --green-dim:#16281f;
+    --red:#e2504f; --red-dim:#331e1e; --amber:#d9a441; --amber-dim:#332a17;
+    --blue:#4f8fe0;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{ background:var(--ink); color:var(--text); font-family:Arial, Helvetica, sans-serif; min-height:100vh; }
+  body{ padding:36px 44px 60px; max-width:1440px; margin:0 auto; }
+  .eyebrow{ font-size:11px; font-weight:bold; letter-spacing:2px; color:var(--orange); text-transform:uppercase; margin-bottom:6px; }
+  h1{ font-size:19px; font-weight:bold; }
+  h2{ font-size:14px; font-weight:bold; margin-bottom:2px; }
+  .sub{ font-size:11.5px; color:var(--text3); }
+  .num{ font-variant-numeric:tabular-nums; }
+  a{ color:inherit; }
+
+  /* ===== UPLOAD SCREEN ===== */
+  #uploadScreen{ display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:80vh; text-align:center; }
+  .upload-mark{ width:56px; height:56px; background:var(--orange); border-radius:12px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:26px; color:#1a1206; margin-bottom:20px; }
+  #uploadScreen h1{ font-size:24px; margin-bottom:8px; }
+  #uploadScreen .sub{ font-size:13.5px; margin-bottom:32px; max-width:440px; }
+  .dropzone{ width:520px; max-width:90vw; border:1.5px dashed var(--line); border-radius:14px; padding:44px 30px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .dropzone:hover, .dropzone.drag{ border-color:var(--orange); background:rgba(228,121,31,0.04); }
+  .dropzone .icon{ font-size:30px; margin-bottom:14px; color:var(--text3); }
+  .dropzone .ttl{ font-size:15px; font-weight:bold; margin-bottom:6px; }
+  .dropzone .hint{ font-size:12px; color:var(--text3); }
+  #fileInput{ display:none; }
+  .err-msg{ margin-top:18px; color:var(--red); font-size:13px; max-width:480px; }
+  .upload-note{ margin-top:26px; font-size:11.5px; color:var(--text3); max-width:480px; line-height:1.5; }
+
+  /* ===== APP SCREEN ===== */
+  #appScreen{ display:none; }
+  .topbar{ display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:18px; border-bottom:1px solid var(--line); margin-bottom:20px; }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand .mark{ width:34px; height:34px; background:var(--orange); border-radius:7px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:15px; color:#1a1206; }
+  .brand-name{ font-size:16px; font-weight:bold; }
+  .brand-sub{ font-size:11px; color:var(--text3); }
+  .file-info{ display:flex; align-items:center; gap:14px; font-size:11.5px; color:var(--text2); }
+  .btn{ background:var(--panel2); border:1px solid var(--line); color:var(--text2); font-size:11.5px; font-family:inherit; padding:7px 13px; border-radius:6px; cursor:pointer; }
+  .btn:hover{ border-color:var(--orange); color:var(--text); }
+
+  /* controls row */
+  .controls{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
+  .tabs{ display:flex; gap:4px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:3px; }
+  .tab{ padding:7px 16px; border-radius:6px; font-size:12.5px; font-weight:bold; color:var(--text3); cursor:pointer; user-select:none; }
+  .tab.active{ background:var(--orange); color:#1a1206; }
+  .datenav{ display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px 8px; }
+  .datenav button{ background:none; border:none; color:var(--text2); font-size:15px; cursor:pointer; padding:2px 8px; border-radius:4px; }
+  .datenav button:hover{ background:var(--panel2); color:var(--orange); }
+  .datenav .lbl{ font-size:13px; font-weight:bold; min-width:170px; text-align:center; }
+  .target-input{ display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:11.5px; color:var(--text2); }
+  .target-input input{ background:var(--panel2); border:1px solid var(--line); color:var(--text); font-family:inherit; font-size:12px; padding:5px 8px; border-radius:5px; width:110px; }
+
+  /* KPI + cards - shared with prior dashboards */
+  .kpi-row{ display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:16px; }
+  .kpi{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  .kpi .eyebrow{ font-size:10px; margin-bottom:9px; }
+  .kpi-val{ font-size:26px; font-weight:bold; line-height:1; }
+  .kpi-val small{ font-size:12px; font-weight:normal; color:var(--text3); }
+  .kpi-sub{ font-size:11px; color:var(--text2); margin-top:8px; }
+  .pill{ font-size:11px; font-weight:bold; padding:3px 9px; border-radius:20px; display:inline-block; }
+  .pill.good{ background:var(--green-dim); color:var(--green); }
+  .pill.warn{ background:var(--amber-dim); color:var(--amber); }
+  .pill.bad{ background:var(--red-dim); color:var(--red); }
+
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin-bottom:14px; }
+  .card-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px; }
+  .grid2{ display:grid; grid-template-columns:2fr 1fr; gap:14px; margin-bottom:14px; }
+  .grid2b{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+
+  .track{ position:relative; height:34px; background:var(--panel2); border-radius:8px; overflow:hidden; margin:14px 0 10px; }
+  .track-fill{ position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg, #b85a13, var(--orange)); border-radius:8px; }
+  .track-label{ position:absolute; top:0; bottom:0; left:0; right:0; display:flex; align-items:center; padding:0 12px; font-size:12px; font-weight:bold; color:var(--text); white-space:nowrap; }
+  .legend{ display:flex; gap:16px; font-size:11px; color:var(--text2); flex-wrap:wrap; }
+  .legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .sw{ width:9px; height:9px; border-radius:2px; display:inline-block; }
+
+  .shift-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .shift-card{ background:var(--panel2); border-radius:8px; padding:14px 16px; }
+  .shift-card .lbl{ font-size:11px; color:var(--text3); font-weight:bold; letter-spacing:1px; text-transform:uppercase; margin-bottom:6px; }
+  .shift-card .big{ font-size:22px; font-weight:bold; margin-bottom:8px; }
+  .bar-mini{ height:6px; background:#0e1319; border-radius:3px; overflow:hidden; margin-bottom:6px; }
+  .bar-mini i{ display:block; height:100%; border-radius:3px; }
+  .shift-card .note{ font-size:10.5px; color:var(--text3); line-height:1.4; }
+
+  table{ width:100%; border-collapse:collapse; font-size:12px; }
+  th{ text-align:left; font-size:10px; color:var(--text3); letter-spacing:0.5px; text-transform:uppercase; padding:0 10px 8px; font-weight:bold; }
+  th.r, td.r{ text-align:right; }
+  td{ padding:9px 10px; border-top:1px solid var(--line); color:var(--text2); vertical-align:middle; }
+  td.name{ color:var(--text); font-weight:bold; }
+  td.code{ font-family:Consolas, Monaco, monospace; font-size:11px; color:var(--text2); }
+  .lines-tag, .op-tag{ font-size:10px; color:var(--text3); }
+  .op-tag{ display:inline-block; font-size:10.5px; font-weight:bold; color:var(--text2); background:var(--panel2); padding:3px 8px; border-radius:4px; }
+  .bar-cell{ display:flex; align-items:center; gap:8px; min-width:110px; }
+  .bar-cell .track2{ flex:1; height:6px; background:#0e1319; border-radius:3px; overflow:hidden; }
+  .bar-cell .track2 i{ display:block; height:100%; border-radius:3px; }
+  .bar-cell .val{ width:42px; text-align:right; font-weight:bold; color:var(--text); font-variant-numeric:tabular-nums; }
+  .flag{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:7px; }
+  tr.crit td{ background:rgba(226,80,79,0.07); }
+  tr.clickable{ cursor:pointer; }
+  tr.clickable:hover td{ background:rgba(255,255,255,0.03); }
+  .chev{ display:inline-block; width:12px; font-size:10px; color:var(--text3); transition:transform .15s; }
+  tr.open .chev{ transform:rotate(90deg); color:var(--orange); }
+  .detail-row td{ padding:0; border-top:none; }
+  .detail-panel{ background:var(--panel2); border-radius:8px; margin:2px 8px 10px; padding:14px 16px; }
+  .detail-title{ font-size:10.5px; color:var(--text3); text-transform:uppercase; letter-spacing:0.5px; font-weight:bold; margin-bottom:10px; }
+  .detail-table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+  .detail-table th{ text-align:left; font-size:9.5px; color:var(--text3); padding:0 8px 6px; font-weight:bold; text-transform:uppercase; }
+  .detail-table th.r{ text-align:right; }
+  .detail-table td{ padding:6px 8px; border-top:1px solid var(--line); color:var(--text2); }
+  .detail-table td.r{ text-align:right; font-variant-numeric:tabular-nums; }
+  .shift-chip{ font-size:9.5px; font-weight:bold; padding:2px 7px; border-radius:10px; background:var(--panel); color:var(--text2); }
+
+  .pareto-row{ display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+  .pareto-label{ width:190px; font-size:11.5px; color:var(--text2); flex-shrink:0; }
+  .pareto-track{ flex:1; height:16px; background:#0e1319; border-radius:4px; overflow:hidden; }
+  .pareto-track i{ display:block; height:100%; border-radius:4px; }
+  .pareto-val{ width:70px; text-align:right; font-size:11.5px; font-weight:bold; color:var(--text); flex-shrink:0; }
+
+  .alert-item{ display:flex; gap:10px; padding:10px 0; border-top:1px solid var(--line); }
+  .alert-item:first-of-type{ border-top:none; padding-top:0; }
+  .alert-dot{ width:7px; height:7px; border-radius:50%; margin-top:5px; flex-shrink:0; }
+  .alert-text{ font-size:12px; color:var(--text2); line-height:1.45; }
+  .alert-text b{ color:var(--text); }
+
+  .empty-note{ font-size:12px; color:var(--text3); padding:20px 0; text-align:center; }
+  footer{ margin-top:22px; padding-top:16px; border-top:1px solid var(--line); font-size:10.5px; color:var(--text3); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+</style>
+</head>
+<body>
+
+  <!-- ===== UPLOAD SCREEN ===== -->
+  <div id="uploadScreen">
+    <div class="upload-mark">P</div>
+    <h1>PRF production snapshot</h1>
+    <div class="sub">Drop in the Daily Production Report workbook and get the daily, weekly, and monthly dashboard views automatically — no setup, nothing leaves your browser.</div>
+    <div class="upload-note" id="autoLoadNote" style="display:none; margin-top:0; margin-bottom:20px; color:var(--orange);"></div>
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">&#8613;</div>
+      <div class="ttl">Drop your .xlsx here, or click to browse</div>
+      <div class="hint">Same file structure as the monthly Daily Production Report — one sheet per month</div>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" />
+    <div class="err-msg" id="errMsg" style="display:none;"></div>
+    <div class="upload-note">This runs entirely in your browser using your device's memory — the file is never uploaded anywhere. Re-open this page and drop in a new file any day to refresh the snapshot.</div>
+  </div>
+
+  <!-- ===== APP SCREEN ===== -->
+  <div id="appScreen">
+    <div class="topbar">
+      <div class="brand">
+        <div class="mark">P</div>
+        <div>
+          <div class="brand-name">Punch Ratna Fasteners — Production Snapshot</div>
+          <div class="brand-sub" id="dateRangeLabel">—</div>
+        </div>
+      </div>
+      <div class="file-info">
+        <span id="fileInfoText">—</span>
+        <button class="btn" id="refreshBtn" style="display:none;" onclick="tryAutoLoadFromDrive(false)">Refresh</button>
+        <button class="btn" onclick="resetApp()">Load different file</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="tabs" id="periodTabs">
+        <div class="tab" data-period="daily">Daily</div>
+        <div class="tab" data-period="weekly">Weekly</div>
+        <div class="tab" data-period="monthly">Monthly</div>
+      </div>
+      <div class="datenav">
+        <button onclick="navPeriod(-1)">&#8592;</button>
+        <span class="lbl" id="periodLabel">—</span>
+        <button onclick="navPeriod(1)">&#8594;</button>
+      </div>
+      <div class="target-input">
+        Monthly requirement
+        <input type="text" id="monthlyTargetInput" value="50,00,000" onchange="onTargetChange()">
+        pcs
+      </div>
+    </div>
+
+    <div id="overviewSection"></div>
+    <div id="skuSection"></div>
+
+    <footer>
+      <span id="footerNote">Source: uploaded workbook · Mon–Sat treated as working days, Sunday as bonus-day production</span>
+      <span>Generated locally in your browser · no data leaves this device</span>
+    </footer>
+  </div>
+
+<script>
+// ============================================================
+// ENGINE: column resolution, parsing
+// ============================================================
+function normHeader(h){ return String(h||'').toLowerCase().replace(/\s+/g,' ').trim(); }
+
+function resolveColumns(headerRow){
+  const map = {};
+  headerRow.forEach((raw, idx) => {
+    const h = normHeader(raw);
+    const orig = String(raw||'').trim();
+    if (!h) return;
+    if (map.date === undefined && h === 'date') { map.date = idx; return; }
+    if (h === 'date' && idx !== map.date) { map.date2 = idx; return; }
+    if (h === 'shift') map.shift = idx;
+    if (h.includes('line') && h.includes('no')) map.lineNo = idx;
+    if (h.includes('machine') && h.includes('no')) map.machineNo = idx;
+    if (h.includes('operat') && h.includes('name')) map.operatorName = idx;
+    if (h.includes('part') && h.includes('name')) map.partName = idx;
+    if (h === 'description') map.description = idx;
+    if (h.includes('opeartion') || h === 'operation') map.operation = idx;
+    if (h.includes('target')) map.target = idx;
+    if (h.includes('reject') && h.includes('qty')) map.rejected = idx;
+    if (h.includes('ok') && h.includes('prod') && h.includes('qty')) map.okQty = idx;
+    if (h.includes('machine run')) map.machineRunHrs = idx;
+    if (h.includes('total') && h.includes('breakdown')) map.totalBreakdown = idx;
+    if (/^1[.\s]/.test(orig)) map.lossSetup = idx;
+    if (/^2[.\s]/.test(orig)) map.lossMeeting = idx;
+    if (/^3[.\s]/.test(orig)) map.lossPowerCut = idx;
+    if (/^4[.\s]/.test(orig)) map.lossNoOperator = idx;
+    if (/^5[.\s]/.test(orig)) map.lossNoPlan = idx;
+    if (/^6[.\s]/.test(orig)) map.lossNoMaterial = idx;
+    if (/^7[.\s]/.test(orig)) map.lossToolReset = idx;
+    if (/^8[.\s]/.test(orig)) map.lossMaintenance = idx;
+  });
+  return map;
+}
+
+function excelSerialToDate(n){
+  const utcDays = Math.floor(n - 25569);
+  const d = new Date(utcDays * 86400 * 1000);
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+function parseDateCell(v){
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date && !isNaN(v)) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  if (typeof v === 'number') return excelSerialToDate(v);
+  const s = String(v).trim();
+  if (!s) return null;
+  let m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})$/);
+  if (m){
+    let [,d,mo,y] = m; d=+d; mo=+mo; y=+y; if (y<100) y+=2000;
+    if (mo>=1&&mo<=12&&d>=1&&d<=31) return new Date(y,mo-1,d);
+  }
+  const d2 = new Date(s);
+  if (!isNaN(d2)) return new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
+  return null;
+}
+function toNum(v){
+  if (v===null||v===undefined||v==='') return NaN;
+  if (typeof v === 'number') return v;
+  const n = parseFloat(String(v).replace(/,/g,'').trim());
+  return isNaN(n) ? NaN : n;
+}
+function cleanStr(v){ return String(v===null||v===undefined?'':v).trim(); }
+function titleCase(s){ return s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()); }
+
+let ALL_ROWS = [];
+let MACHINE_FLEET_SIZE = 0;
+let MIN_DATE = null, MAX_DATE = null;
+let currentPeriod = 'daily';
+let currentRefDate = null;
+let monthlyTarget = 5000000;
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function fmt(n){
+  if (n===null||n===undefined||isNaN(n)) return '—';
+  return Math.round(n).toLocaleString('en-IN');
+}
+function fmtPct(n, d){
+  if (n===null||n===undefined||isNaN(n)) return '—';
+  return n.toFixed(d===undefined?1:d) + '%';
+}
+function fmtCompact(n){
+  if (n===null||n===undefined||isNaN(n)) return '—';
+  if (Math.abs(n) >= 100000) return (n/100000).toFixed(1) + 'L';
+  if (Math.abs(n) >= 1000) return (n/1000).toFixed(1) + 'k';
+  return String(Math.round(n));
+}
+function sameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function addDays(d,n){ const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function startOfWeek(d){ // Monday start
+  const day = d.getDay(); // 0=Sun
+  const diff = day===0 ? -6 : 1-day;
+  return addDays(d, diff);
+}
+function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+function endOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0); }
+function daysInclusive(start,end){ return Math.round((end-start)/86400000)+1; }
+function isWorkingDay(d){ return d.getDay() !== 0; } // Sunday=0 excluded
+function workingDaysInRange(start,end){
+  let c=0; let d=new Date(start);
+  while (d<=end){ if (isWorkingDay(d)) c++; d=addDays(d,1); }
+  return c;
+}
+
+function getPeriodRange(period, refDate){
+  if (period==='daily') return { start:new Date(refDate), end:new Date(refDate) };
+  if (period==='weekly'){ const s=startOfWeek(refDate); return { start:s, end:addDays(s,6) }; }
+  const s = startOfMonth(refDate); return { start:s, end:endOfMonth(refDate) };
+}
+function periodLabel(period, refDate){
+  const {start,end} = getPeriodRange(period, refDate);
+  if (period==='daily') return `${DAY_NAMES[refDate.getDay()]}, ${refDate.getDate()} ${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`;
+  if (period==='weekly') return `${start.getDate()} ${MONTH_NAMES[start.getMonth()]} \u2013 ${end.getDate()} ${MONTH_NAMES[end.getMonth()]} ${end.getFullYear()}`;
+  return `${MONTH_NAMES[refDate.getMonth()]} ${refDate.getFullYear()}`;
+}
+function navPeriod(dir){
+  if (currentPeriod==='daily') currentRefDate = addDays(currentRefDate, dir);
+  else if (currentPeriod==='weekly') currentRefDate = addDays(currentRefDate, dir*7);
+  else { const d=new Date(currentRefDate); d.setMonth(d.getMonth()+dir); currentRefDate = d; }
+  renderAll();
+}
+
+function rowsInRange(start,end){
+  return ALL_ROWS.filter(r => r.date >= start && r.date <= end);
+}
+
+// ============================================================
+// AGGREGATION
+// ============================================================
+function computeKPIs(rows){
+  let ok=0, target=0, rejected=0;
+  const machines = new Set();
+  rows.forEach(r=>{
+    if (!isNaN(r.okQty)) ok += r.okQty;
+    if (!isNaN(r.target)) target += r.target;
+    if (!isNaN(r.rejected)) rejected += r.rejected;
+    if (r.machineNo && !isNaN(r.okQty)) machines.add(r.machineNo);
+  });
+  const attain = target>0 ? (ok/target*100) : null;
+  const rejPct = (ok+rejected)>0 ? (rejected/(ok+rejected)*100) : null;
+  return { ok, target, rejected, attain, rejPct, machinesActive: machines.size };
+}
+
+function computeDailySeries(start,end){
+  const days = [];
+  let d = new Date(start);
+  while (d<=end){
+    const dayRows = ALL_ROWS.filter(r=>sameDay(r.date,d));
+    const k = computeKPIs(dayRows);
+    days.push({ date:new Date(d), ok:k.ok, target:k.target });
+    d = addDays(d,1);
+  }
+  return days;
+}
+
+function computeLossPareto(rows){
+  const cats = [
+    { key:'lossNoOperator', label:'No operator / absent' },
+    { key:'lossToolReset', label:'Tool / insert reset' },
+    { key:'lossSetup', label:'Set-up & approval' },
+    { key:'lossPowerCut', label:'Power cut' },
+    { key:'lossMaintenance', label:'Maintenance breakdown' },
+    { key:'lossNoMaterial', label:'No raw material' },
+    { key:'lossNoPlan', label:'No plan' },
+    { key:'lossMeeting', label:'Meeting / training' },
+  ];
+  const sums = cats.map(c=>{
+    let s=0; rows.forEach(r=>{ if (!isNaN(r[c.key])) s+=r[c.key]; });
+    return { label:c.label, minutes:s, hours:s/60 };
+  });
+  sums.sort((a,b)=>b.minutes-a.minutes);
+  return sums;
+}
+
+function groupBy(rows, keyFn){
+  const m = new Map();
+  rows.forEach(r=>{
+    const k = keyFn(r);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(r);
+  });
+  return m;
+}
+
+function computeLineTable(rows){
+  const g = groupBy(rows.filter(r=>r.lineNo), r=>r.lineNo);
+  const out = [];
+  g.forEach((rs, lineNo)=>{
+    const k = computeKPIs(rs);
+    if (k.target<=0) return;
+    out.push({ lineNo, ok:k.ok, target:k.target, attain:k.attain, rejPct:k.rejPct, shifts:rs.length });
+  });
+  out.sort((a,b)=>a.attain-b.attain);
+  return out;
+}
+
+// ===== SETTER GROUPS =====
+const SETTER_MACHINE_GROUPS = [
+  { setter: "Sushil & Ajaydeen", machines: [33,38,62,63,64,65,27,48,54,26,25,55,59,61] },
+  { setter: "Sanjay & Shudhanshu", machines: [50,51,52,53,44,45,40,41,32,34,36,37,39,79] },
+  { setter: "Aman & Pardeep", machines: [80,81,82,83,84,85,70,71,72,69,73,68,67,74,66,75] },
+  { setter: "Jasbir & Manoj", machines: [49,60,28,56,42,43,46,47,29,30,31,35] },
+  { setter: "Sandeep Panchal 1 & Sandeep Panchal 2", machines: [20,22,8,78,18,19,23,24,76,77,'POLY-1','POLY-2'] },
+];
+const SETTER_LOOKUP = (function(){
+  const map = {};
+  SETTER_MACHINE_GROUPS.forEach(g=>{
+    g.machines.forEach(m=>{
+      const key = typeof m === 'string' ? m.toUpperCase() : 'CNC-' + String(m).padStart(2,'0');
+      map[key] = g.setter;
+    });
+  });
+  return map;
+})();
+function getSetter(machineNo){
+  if (!machineNo) return 'Unassigned';
+  return SETTER_LOOKUP[String(machineNo).trim().toUpperCase()] || 'Unassigned';
+}
+
+function computeSetterTable(rows){
+  const g = groupBy(rows.filter(r=>r.machineNo), r=>getSetter(r.machineNo));
+  const out = [];
+  g.forEach((rs, setter)=>{
+    const k = computeKPIs(rs);
+    if (k.target<=0) return;
+    out.push({ setter, ok:k.ok, target:k.target, attain:k.attain, rejPct:k.rejPct, shifts:rs.length });
+  });
+  out.sort((a,b)=>a.attain-b.attain);
+  return out;
+}
+
+function computeMachineFlags(rows){
+  const g = groupBy(rows.filter(r=>r.machineNo), r=>r.machineNo);
+  const out = [];
+  g.forEach((rs, machineNo)=>{
+    const k = computeKPIs(rs);
+    if (k.target<=0 || rs.length<3) return;
+    out.push({ machineNo, lineNo: rs[0].lineNo, ok:k.ok, target:k.target, attain:k.attain, shifts:rs.length });
+  });
+  out.sort((a,b)=>a.attain-b.attain);
+  return out;
+}
+
+function computeShiftSplit(rows){
+  const withShift = rows.filter(r=>r.shift);
+  if (withShift.length < rows.length*0.3) return null; // not enough shift data logged
+  const g = groupBy(withShift, r=>r.shift.toUpperCase());
+  const out = {};
+  g.forEach((rs, shift)=>{
+    const k = computeKPIs(rs);
+    out[shift] = k;
+  });
+  return out;
+}
+
+function computeSKUGroups(rows){
+  const g = groupBy(rows.filter(r=>r.partName), r => r.partName+'|'+r.description+'|'+r.operation);
+  const out = [];
+  g.forEach((rs, key)=>{
+    const [partName, description, operation] = key.split('|');
+    const k = computeKPIs(rs);
+    const machines = [...new Set(rs.map(r=>r.machineNo).filter(Boolean))].sort();
+    out.push({ key, partName, description, operation, ok:k.ok, target:k.target, rejected:k.rejected, attain:k.attain, rejPct:k.rejPct, machines, rows:rs });
+  });
+  out.sort((a,b)=>b.ok-a.ok);
+  return out;
+}
+
+// ============================================================
+// SVG CHART
+// ============================================================
+function buildTrendSVG(series){
+  const W=600,H=220,padL=40,padR=10,padT=10,padB=24;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const n = series.length;
+  const maxVal = Math.max(...series.map(s=>s.ok), ...series.map(s=>isNaN(s.target)?0:s.target), 1);
+  const yMax = Math.ceil(maxVal*1.15/1000)*1000 || 1000;
+  const x = i => n<=1 ? padL+plotW/2 : padL + i*(plotW/(n-1));
+  const y = v => padT + plotH - (v/yMax)*plotH;
+  const linePts = series.map((s,i)=>`${x(i).toFixed(1)},${y(s.ok).toFixed(1)}`).join(' ');
+  const areaPts = `${x(0).toFixed(1)},${(padT+plotH).toFixed(1)} ` + linePts + ` ${x(n-1).toFixed(1)},${(padT+plotH).toFixed(1)}`;
+  const avgTarget = series.filter(s=>!isNaN(s.target)&&s.target>0).reduce((a,b,_,arr)=>a+b.target/arr.length,0);
+  let targetLine = '';
+  if (avgTarget>0){
+    const ty = y(avgTarget);
+    targetLine = `<line x1="${padL}" y1="${ty.toFixed(1)}" x2="${W-padR}" y2="${ty.toFixed(1)}" stroke="#6f7986" stroke-width="1.2" stroke-dasharray="5,4"/>
+      <text x="${W-padR-4}" y="${(ty-6).toFixed(1)}" fill="#8a94a3" font-size="9" font-family="Arial" text-anchor="end">avg target ${fmtCompact(avgTarget)}</text>`;
+  }
+  let grid = '';
+  for (let g=0; g<=3; g++){
+    const gv = yMax*g/3;
+    const gy = y(gv);
+    grid += `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#2a3341':'#242c37'}" stroke-width="1"/>
+      <text x="${padL-6}" y="${(gy+3).toFixed(1)}" fill="#6f7986" font-size="9" font-family="Arial" text-anchor="end">${fmtCompact(gv)}</text>`;
+  }
+  const labelStep = Math.max(1, Math.ceil(n/8));
+  let xlabels = '';
+  series.forEach((s,i)=>{
+    if (i%labelStep===0 || i===n-1){
+      xlabels += `<text x="${x(i).toFixed(1)}" y="${H-6}" fill="#6f7986" font-size="9" font-family="Arial" text-anchor="middle">${s.date.getDate()} ${MONTH_NAMES[s.date.getMonth()]}</text>`;
+    }
+  });
+  const lastPt = n>0 ? `<circle cx="${x(n-1).toFixed(1)}" cy="${y(series[n-1].ok).toFixed(1)}" r="3.2" fill="#e4791f"/>` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%; height:230px;" role="img" aria-label="Trend chart of daily OK production">
+    ${grid}
+    ${targetLine}
+    <polygon points="${areaPts}" fill="#e4791f" opacity="0.12"/>
+    <polyline points="${linePts}" fill="none" stroke="#e4791f" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${lastPt}
+    ${xlabels}
+  </svg>`;
+}
+
+function attainColor(a){
+  if (a===null||a===undefined||isNaN(a)) return 'red';
+  if (a<60) return 'red';
+  if (a<80) return 'amber';
+  return 'green';
+}
+
+// ============================================================
+// RENDER: OVERVIEW
+// ============================================================
+function renderOverview(rows, period, refDate, range){
+  const kpi = computeKPIs(rows);
+  const workDays = workingDaysInRange(range.start, range.end);
+  const totalDays = daysInclusive(range.start, range.end);
+  const dailyAvg = totalDays>0 ? kpi.ok/totalDays : 0;
+
+  // path to target
+  const monthWorkDays = workingDaysInRange(startOfMonth(refDate), endOfMonth(refDate));
+  const impliedDaily = monthWorkDays>0 ? monthlyTarget/monthWorkDays : 0;
+  const periodRequirement = impliedDaily * workDays;
+  const pathPct = periodRequirement>0 ? Math.min(100,(kpi.ok/periodRequirement*100)) : 0;
+  const pathPctReal = periodRequirement>0 ? (kpi.ok/periodRequirement*100) : 0;
+
+  const attainC = attainColor(kpi.attain);
+  const attainPillClass = attainC==='green'?'good':(attainC==='amber'?'warn':'bad');
+
+  let html = '';
+  html += `<div class="kpi-row">
+    <div class="kpi">
+      <div class="eyebrow">${period==='daily'?'Today':period==='weekly'?'This week':'This month'}</div>
+      <div class="kpi-val num">${fmt(kpi.ok)} <small>pcs</small></div>
+      <div class="kpi-sub">vs target ${fmt(kpi.target)} <span class="pill ${attainPillClass}" style="margin-left:6px;">${fmtPct(kpi.attain)} achieved</span></div>
+    </div>
+    <div class="kpi">
+      <div class="eyebrow">Daily average</div>
+      <div class="kpi-val num">${fmt(dailyAvg)} <small>pcs/day</small></div>
+      <div class="kpi-sub">${totalDays} day${totalDays>1?'s':''} in period \u00b7 ${workDays} working</div>
+    </div>
+    <div class="kpi">
+      <div class="eyebrow">Rejected</div>
+      <div class="kpi-val num">${fmt(kpi.rejected)} <small>pcs</small></div>
+      <div class="kpi-sub">${fmtPct(kpi.rejPct,2)} reject rate</div>
+    </div>
+    <div class="kpi">
+      <div class="eyebrow">Machines active</div>
+      <div class="kpi-val num">${kpi.machinesActive} <small>/ ${MACHINE_FLEET_SIZE||'—'}</small></div>
+      <div class="kpi-sub">${MACHINE_FLEET_SIZE ? Math.round(kpi.machinesActive/MACHINE_FLEET_SIZE*100)+'% of fleet' : ''}</div>
+    </div>
+  </div>`;
+
+  html += `<div class="card">
+    <div class="card-head">
+      <div><h2>Path to monthly requirement</h2></div>
+      <div style="text-align:right;"><div style="font-size:18px; font-weight:bold;">${fmt(kpi.ok)} <span style="color:var(--text3); font-size:12px; font-weight:normal;">/ ${fmt(periodRequirement)}</span></div></div>
+    </div>
+    <div class="track"><div class="track-fill" style="width:${pathPct}%;"></div><div class="track-label">${fmtPct(pathPctReal)} of pro-rated requirement</div></div>
+    <div class="legend"><span><span class="sw" style="background:var(--orange);"></span>Current pace</span><span>Monthly requirement: ${fmt(monthlyTarget)} pcs \u00b7 ${monthWorkDays} working days this month</span></div>
+  </div>`;
+
+  const shiftSplit = computeShiftSplit(rows);
+  html += `<div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><h2>OK production trend</h2><div class="sub">${period==='daily' ? 'Trailing 30 days' : period==='weekly' ? 'This week, day by day' : 'Every day this month'}</div></div></div>
+      ${buildTrendSVG(period==='daily' ? computeDailySeries(addDays(refDate,-29), refDate) : computeDailySeries(range.start, range.end))}
+    </div>
+    <div class="card">`;
+  if (shiftSplit && shiftSplit['A'] && shiftSplit['B']){
+    const a = shiftSplit['A'], b = shiftSplit['B'];
+    html += `<div class="card-head"><div><h2>Shift A vs Shift B</h2><div class="sub">This period</div></div></div>
+      <div class="shift-row">
+        <div class="shift-card"><div class="lbl">Shift A</div><div class="big" style="color:var(--${attainColor(a.attain)});">${fmtPct(a.attain)}</div><div class="bar-mini"><i style="width:${Math.min(100,a.attain||0)}%; background:var(--${attainColor(a.attain)});"></i></div><div class="note">${fmt(a.ok)} pcs vs ${fmt(a.target)} target</div></div>
+        <div class="shift-card"><div class="lbl">Shift B</div><div class="big" style="color:var(--${attainColor(b.attain)});">${fmtPct(b.attain)}</div><div class="bar-mini"><i style="width:${Math.min(100,b.attain||0)}%; background:var(--${attainColor(b.attain)});"></i></div><div class="note">${fmt(b.ok)} pcs vs ${fmt(b.target)} target</div></div>
+      </div>`;
+  } else {
+    const setterTable = computeSetterTable(rows).slice(0,5);
+    html += `<div class="card-head"><div><h2>Setters \u2014 lowest achieved</h2><div class="sub">${shiftSplit===null ? 'Shift not logged this period' : 'This period'}</div></div></div>`;
+    setterTable.forEach(st=>{
+      html += `<div style="margin-bottom:10px;"><div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;"><span style="color:var(--text);">${st.setter}</span><span style="font-weight:bold; color:var(--${attainColor(st.attain)});">${fmtPct(st.attain)}</span></div><div class="bar-mini"><i style="width:${Math.min(100,st.attain||0)}%; background:var(--${attainColor(st.attain)});"></i></div></div>`;
+    });
+    if (setterTable.length===0) html += `<div class="empty-note">No setter data for this period</div>`;
+  }
+  html += `</div></div>`;
+
+  const pareto = computeLossPareto(rows);
+  const maxMin = Math.max(...pareto.map(p=>p.minutes), 1);
+  const setterTable = computeSetterTable(rows);
+  html += `<div class="grid2b">
+    <div class="card">
+      <div class="card-head"><div><h2>Where the hours go</h2><div class="sub">Total hours lost, this period</div></div></div>`;
+  pareto.forEach(p=>{
+    if (p.hours < 0.05) return;
+    html += `<div class="pareto-row"><div class="pareto-label">${p.label}</div><div class="pareto-track"><i style="width:${p.minutes/maxMin*100}%; background:${p===pareto[0]?'#e2504f':'#5c6577'};"></i></div><div class="pareto-val">${fmt(p.hours)} hrs</div></div>`;
+  });
+  html += `</div>
+    <div class="card">
+      <div class="card-head"><div><h2>Setter performance</h2><div class="sub">% of own target, worst to best</div></div></div>
+      <table><tr><th>Setter</th><th class="r">Achieved</th><th class="r">Reject %</th></tr>`;
+  setterTable.forEach(st=>{
+    html += `<tr><td class="name">${st.setter}</td><td class="r"><div class="bar-cell"><div class="track2"><i style="width:${Math.min(100,st.attain||0)}%; background:var(--${attainColor(st.attain)});"></i></div><span class="val">${fmtPct(st.attain)}</span></div></td><td class="r">${fmtPct(st.rejPct,2)}</td></tr>`;
+  });
+  if (setterTable.length===0) html += `<tr><td colspan="3" class="empty-note">No setter data for this period</td></tr>`;
+  html += `</table></div></div>`;
+
+  const machineFlags = computeMachineFlags(rows).slice(0,5);
+  html += `<div class="card">
+    <div class="card-head"><div><h2>Flags this period</h2><div class="sub">Lowest-achieved machines, min. 3 shifts logged</div></div></div>`;
+  if (machineFlags.length===0){
+    html += `<div class="empty-note">No machine-level flags for this period</div>`;
+  } else {
+    machineFlags.forEach(m=>{
+      html += `<div class="alert-item"><span class="alert-dot" style="background:var(--${attainColor(m.attain)});"></span><span class="alert-text"><b>${m.machineNo}</b> (${getSetter(m.machineNo)}) \u2014 ${fmtPct(m.attain)} achieved across ${m.shifts} shifts logged this period.</span></div>`;
+    });
+  }
+  html += `</div>`;
+
+  document.getElementById('overviewSection').innerHTML = html;
+}
+
+function computeFamilySummary(rows){
+  const g = groupBy(rows.filter(r=>r.partName), r=>r.partName);
+  const out = [];
+  g.forEach((rs, partName)=>{
+    const k = computeKPIs(rs);
+    if (k.target<=0 && k.ok<=0) return;
+    const skus = new Set(rs.map(r=>r.description+'|'+r.operation));
+    out.push({ partName, ok:k.ok, target:k.target, attain:k.attain, skuCount:skus.size });
+  });
+  out.sort((a,b)=>b.ok-a.ok);
+  return out;
+}
+
+// ============================================================
+// RENDER: SKU TABLE
+// ============================================================
+let skuDetailCache = {};
+
+function buildSkuDetailHTML(group, period){
+  if (period==='daily'){
+    const byMachine = groupBy(group.rows, r=>r.machineNo);
+    const recs = [];
+    byMachine.forEach((rs, machine)=>{
+      rs.forEach((r,i)=>{
+        recs.push({ machine, setter: getSetter(machine), shift: r.shift || (i===0?'Shift A':i===1?'Shift B':`Extra ${i+1}`), operator: r.operatorName || '\u2014', ok:r.okQty||0, target:Math.round(r.target||0), rejected:r.rejected||0 });
+      });
+    });
+    const hasLoggedShift = group.rows.some(r=>r.shift);
+    let rowsHtml = recs.map(r=>{
+      const attain = r.target>0 ? (r.ok/r.target*100).toFixed(1) : '0.0';
+      return `<tr><td>${r.machine}</td><td>${r.setter}</td><td><span class="shift-chip">${r.shift}</span></td><td>${r.operator}</td><td class="r">${fmt(r.ok)}</td><td class="r">${fmt(r.target)}</td><td class="r">${attain}%</td><td class="r">${fmt(r.rejected)}</td></tr>`;
+    }).join('');
+    return `<div class="detail-title">Machine &amp; shift breakdown</div>
+      <table class="detail-table"><tr><th>Machine</th><th>Setter</th><th>Shift</th><th>Operator</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th></tr>${rowsHtml}</table>
+      ${hasLoggedShift ? '' : '<div style="font-size:10px; color:var(--text3); margin-top:8px;">Shift label inferred from entry order \u2014 not logged directly for this day.</div>'}`;
+  }
+  const byMachine = groupBy(group.rows, r=>r.machineNo);
+  const recs = [];
+  byMachine.forEach((rs, machine)=>{
+    const k = computeKPIs(rs);
+    recs.push({ machine, setter: getSetter(machine), ok:k.ok, target:k.target, attain:k.attain, rejected:k.rejected, shifts:rs.length });
+  });
+  recs.sort((a,b)=>b.ok-a.ok);
+  let rowsHtml = recs.map(r=>`<tr><td>${r.machine}</td><td>${r.setter}</td><td class="r">${r.shifts}</td><td class="r">${fmt(r.ok)}</td><td class="r">${fmt(r.target)}</td><td class="r">${fmtPct(r.attain)}</td><td class="r">${fmt(r.rejected)}</td></tr>`).join('');
+  return `<div class="detail-title">Machine breakdown, summed across period</div>
+    <table class="detail-table"><tr><th>Machine</th><th>Setter</th><th class="r">Shifts</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th></tr>${rowsHtml}</table>`;
+}
+
+function toggleSkuRow(tr, idx, period){
+  const detailRow = tr.nextElementSibling;
+  const panel = detailRow.querySelector('.detail-panel');
+  const isOpen = tr.classList.contains('open');
+  if (isOpen){ tr.classList.remove('open'); detailRow.style.display='none'; }
+  else {
+    if (!panel.dataset.loaded){
+      const group = skuDetailCache[idx];
+      panel.innerHTML = buildSkuDetailHTML(group, period);
+      panel.dataset.loaded = '1';
+    }
+    tr.classList.add('open'); detailRow.style.display='table-row';
+  }
+}
+
+function renderSKU(rows, period){
+  const families = computeFamilySummary(rows);
+  const skuGroups = computeSKUGroups(rows);
+  skuDetailCache = {};
+
+  let html = `<div class="card">
+    <div class="card-head"><div><h2>By part family</h2><div class="sub">Rolled up from description / operation level</div></div></div>
+    <div class="fam-row" style="display:grid; grid-template-columns:repeat(${Math.max(1,Math.min(families.length,6))}, 1fr); gap:12px;">`;
+  families.forEach(f=>{
+    html += `<div class="shift-card"><div class="lbl" style="font-size:12px; font-weight:bold; color:var(--text); margin-bottom:8px;">${f.partName}</div>
+      <div style="font-size:19px; font-weight:bold; margin-bottom:6px;">${fmt(f.ok)} <small style="font-size:11px; font-weight:normal; color:var(--text3);">/ ${fmt(f.target)}</small></div>
+      <div class="bar-mini"><i style="width:${Math.min(100,f.attain||0)}%; background:var(--${attainColor(f.attain)});"></i></div>
+      <div class="note">${fmtPct(f.attain)} achieved \u00b7 ${f.skuCount} SKU${f.skuCount!==1?'s':''}</div></div>`;
+  });
+  if (families.length===0) html += `<div class="empty-note">No part data for this period</div>`;
+  html += `</div></div>`;
+
+  html += `<div class="card">
+    <div class="card-head"><div><h2>SKU-level production</h2><div class="sub">Grouped by description (drawing) + operation \u00b7 click a row for machine detail \u00b7 red rows need attention</div></div></div>
+    <table>
+      <tr><th>Part</th><th>Description</th><th>Operation</th><th>Machines running</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th><th class="r">Reject %</th></tr>`;
+  skuGroups.forEach((g,idx)=>{
+    skuDetailCache[idx] = g;
+    const c = attainColor(g.attain);
+    const cls = c==='red' ? 'crit clickable' : 'clickable';
+    const nMach = g.machines.length;
+    const machinesDisp = nMach<=3 ? g.machines.join(', ') : g.machines.slice(0,2).join(', ')+` +${nMach-2} more`;
+    html += `<tr class="${cls}" onclick="toggleSkuRow(this, ${idx}, '${period}')"><td><span class="chev">&#9656;</span><span class="flag" style="background:var(--${c});"></span><span class="name">${g.partName}</span></td><td class="code">${g.description||'\u2014'}</td><td><span class="op-tag">${g.operation||'\u2014'}</span></td><td><span class="lines-tag">${machinesDisp} <span style="color:var(--text3);">(${nMach})</span></span></td><td class="r num">${fmt(g.ok)}</td><td class="r num">${fmt(g.target)}</td><td class="r"><div class="bar-cell"><div class="track2"><i style="width:${Math.min(100,g.attain||0)}%; background:var(--${c});"></i></div><span class="val">${fmtPct(g.attain)}</span></div></td><td class="r num">${fmt(g.rejected)}</td><td class="r">${fmtPct(g.rejPct,2)}</td></tr>
+      <tr class="detail-row" style="display:none;"><td colspan="9"><div class="detail-panel"></div></td></tr>`;
+  });
+  if (skuGroups.length===0) html += `<tr><td colspan="9" class="empty-note">No SKU data for this period</td></tr>`;
+  html += `</table></div>`;
+
+  document.getElementById('skuSection').innerHTML = html;
+}
+
+function parseWorkbook(workbook){
+  const rows = [];
+  workbook.SheetNames.forEach(sheetName => {
+    const ws = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(ws, { header:1, raw:true, defval:null });
+    if (data.length < 2) return;
+    const map = resolveColumns(data[0]);
+    if (map.okQty === undefined || (map.date === undefined && map.date2 === undefined)) return;
+    for (let i=1;i<data.length;i++){
+      const row = data[i];
+      if (!row || row.every(c=>c===null||c==='')) continue;
+      let dateVal = map.date!==undefined ? row[map.date] : null;
+      if ((dateVal===null||dateVal===undefined) && map.date2!==undefined) dateVal = row[map.date2];
+      const date = parseDateCell(dateVal);
+      if (!date) continue;
+      rows.push({
+        date, sheet: sheetName,
+        shift: map.shift!==undefined ? cleanStr(row[map.shift]) : '',
+        lineNo: map.lineNo!==undefined ? cleanStr(row[map.lineNo]) : '',
+        machineNo: map.machineNo!==undefined ? cleanStr(row[map.machineNo]) : '',
+        operatorName: map.operatorName!==undefined ? cleanStr(row[map.operatorName]) : '',
+        partName: map.partName!==undefined ? titleCase(cleanStr(row[map.partName])) : '',
+        description: map.description!==undefined ? cleanStr(row[map.description]) : '',
+        operation: map.operation!==undefined ? cleanStr(row[map.operation]).toUpperCase() : '',
+        okQty: map.okQty!==undefined ? toNum(row[map.okQty]) : NaN,
+        target: map.target!==undefined ? toNum(row[map.target]) : NaN,
+        rejected: map.rejected!==undefined ? toNum(row[map.rejected]) : NaN,
+        machineRunHrs: map.machineRunHrs!==undefined ? toNum(row[map.machineRunHrs]) : NaN,
+        totalBreakdown: map.totalBreakdown!==undefined ? toNum(row[map.totalBreakdown]) : NaN,
+        lossSetup: map.lossSetup!==undefined ? toNum(row[map.lossSetup]) : NaN,
+        lossMeeting: map.lossMeeting!==undefined ? toNum(row[map.lossMeeting]) : NaN,
+        lossPowerCut: map.lossPowerCut!==undefined ? toNum(row[map.lossPowerCut]) : NaN,
+        lossNoOperator: map.lossNoOperator!==undefined ? toNum(row[map.lossNoOperator]) : NaN,
+        lossNoPlan: map.lossNoPlan!==undefined ? toNum(row[map.lossNoPlan]) : NaN,
+        lossNoMaterial: map.lossNoMaterial!==undefined ? toNum(row[map.lossNoMaterial]) : NaN,
+        lossToolReset: map.lossToolReset!==undefined ? toNum(row[map.lossToolReset]) : NaN,
+        lossMaintenance: map.lossMaintenance!==undefined ? toNum(row[map.lossMaintenance]) : NaN,
+      });
+    }
+  });
+  return rows;
+}
+
+// ============================================================
+// MAIN RENDER / EVENTS
+// ============================================================
+function renderAll(){
+  const range = getPeriodRange(currentPeriod, currentRefDate);
+  const rows = rowsInRange(range.start, range.end);
+  document.getElementById('periodLabel').textContent = periodLabel(currentPeriod, currentRefDate);
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.period===currentPeriod));
+  renderOverview(rows, currentPeriod, currentRefDate, range);
+  renderSKU(rows, currentPeriod);
+}
+
+function onTargetChange(){
+  const raw = document.getElementById('monthlyTargetInput').value.replace(/[^0-9]/g,'');
+  const n = parseInt(raw||'5000000',10);
+  monthlyTarget = n;
+  document.getElementById('monthlyTargetInput').value = n.toLocaleString('en-IN');
+  renderAll();
+}
+
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{ currentPeriod = tab.dataset.period; renderAll(); });
+});
+
+function resetApp(){
+  ALL_ROWS = [];
+  clearInterval(AUTO_REFRESH_TIMER);
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('uploadScreen').style.display = 'flex';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('errMsg').style.display = 'none';
+  document.getElementById('dropzone').style.display = 'block';
+  document.getElementById('autoLoadNote').style.display = DRIVE_FILE_ID ? 'block' : 'none';
+  if (DRIVE_FILE_ID) tryAutoLoadFromDrive(false);
+}
+
+function showError(msg){
+  const el = document.getElementById('errMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function loadFromArrayBuffer(arrayBuffer, sourceLabel, isInitial){
+  try {
+    const data = new Uint8Array(arrayBuffer);
+    const workbook = XLSX.read(data, { type:'array', cellDates:true });
+    const rows = parseWorkbook(workbook);
+    if (rows.length === 0){
+      if (isInitial) showError('No usable production rows found. Check that the workbook has the same column headers as the Daily Production Report (Date, OK Prod. Qty., Target, etc.).');
+      return false;
+    }
+    ALL_ROWS = rows;
+    MACHINE_FLEET_SIZE = new Set(rows.map(r=>r.machineNo).filter(Boolean)).size;
+    const dates = rows.map(r=>r.date.getTime());
+    MIN_DATE = new Date(Math.min(...dates));
+    MAX_DATE = new Date(Math.max(...dates));
+    if (isInitial){
+      currentRefDate = new Date(MAX_DATE);
+      currentPeriod = 'daily';
+    }
+    document.getElementById('dateRangeLabel').textContent =
+      `Data from ${MIN_DATE.getDate()} ${MONTH_NAMES[MIN_DATE.getMonth()]} ${MIN_DATE.getFullYear()} to ${MAX_DATE.getDate()} ${MONTH_NAMES[MAX_DATE.getMonth()]} ${MAX_DATE.getFullYear()}`;
+    document.getElementById('fileInfoText').textContent = `${sourceLabel} \u00b7 ${rows.length.toLocaleString('en-IN')} rows \u00b7 ${MACHINE_FLEET_SIZE} machines \u00b7 updated ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`;
+    document.getElementById('uploadScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display = 'block';
+    document.getElementById('refreshBtn').style.display = DRIVE_FILE_ID ? 'inline-block' : 'none';
+    renderAll();
+    return true;
+  } catch(err){
+    console.error(err);
+    if (isInitial) showError('Could not read this file. Make sure it is a valid .xlsx workbook. (' + err.message + ')');
+    return false;
+  }
+}
+
+function loadFile(file){
+  if (!file) return;
+  clearInterval(AUTO_REFRESH_TIMER);
+  document.getElementById('errMsg').style.display = 'none';
+  const reader = new FileReader();
+  reader.onload = (e) => loadFromArrayBuffer(e.target.result, file.name, true);
+  reader.onerror = () => showError('Could not read the file from disk.');
+  reader.readAsArrayBuffer(file);
+}
+
+// ============================================================
+// AUTO-LOAD FROM GOOGLE DRIVE / SHEETS (Tier 2 setup)
+// ============================================================
+// Paste the file's ID below (the long string in its share link, between
+// /d/ and /view or /edit) and make sure it's shared as "Anyone with the
+// link can view". Works whether Drive kept it as a real .xlsx file or
+// auto-converted it to a native Google Sheet \u2014 the tool tries both.
+// Leave blank to disable auto-load and always show the manual upload screen.
+const DRIVE_FILE_ID = '1ysvv3-FKThK0N6uAcA1Ae4Vnt0Hrql1-';
+const AUTO_REFRESH_MINUTES = 10;
+let AUTO_REFRESH_TIMER = null;
+
+function driveDownloadUrls(id){
+  return [
+    `https://drive.google.com/uc?export=download&id=${id}`,             // raw file in Drive
+    `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`,   // auto-converted Google Sheet
+  ];
+}
+
+function fetchFirstWorking(urls){
+  return urls.reduce((chain, url) => chain.catch(() =>
+    fetch(url, { cache: 'no-store' }).then(res => { if (!res.ok) throw new Error('HTTP '+res.status); return res.arrayBuffer(); })
+  ), Promise.reject());
+}
+
+function tryAutoLoadFromDrive(isInitial){
+  if (!DRIVE_FILE_ID) return;
+  const note = document.getElementById('autoLoadNote');
+  if (isInitial && note) { note.style.display='block'; note.textContent = 'Loading latest data from Google Drive\u2026'; }
+  fetchFirstWorking(driveDownloadUrls(DRIVE_FILE_ID))
+    .then(buf => {
+      const ok = loadFromArrayBuffer(buf, 'Google Drive (auto)', isInitial);
+      if (ok && !AUTO_REFRESH_TIMER){
+        AUTO_REFRESH_TIMER = setInterval(()=>tryAutoLoadFromDrive(false), AUTO_REFRESH_MINUTES*60*1000);
+      }
+      if (!ok && isInitial && note){
+        note.textContent = 'Could not read the Drive file automatically \u2014 upload it manually below instead.';
+      }
+    })
+    .catch(err => {
+      console.warn('Drive auto-load failed:', err);
+      if (isInitial && note){
+        note.textContent = 'Could not reach Google Drive automatically (this can happen if the file isn\u2019t shared as "Anyone with the link") \u2014 upload it manually below instead.';
+      }
+    });
+}
+
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+fileInput.addEventListener('change', (e)=>{ if (e.target.files[0]) loadFile(e.target.files[0]); });
+['dragenter','dragover'].forEach(evt=>{
+  dropzone.addEventListener(evt, (e)=>{ e.preventDefault(); dropzone.classList.add('drag'); });
+});
+['dragleave','drop'].forEach(evt=>{
+  dropzone.addEventListener(evt, (e)=>{ e.preventDefault(); dropzone.classList.remove('drag'); });
+});
+dropzone.addEventListener('drop', (e)=>{
+  const f = e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+
+// Attempt auto-load from Drive on page open (no-op if DRIVE_FILE_ID is blank)
+tryAutoLoadFromDrive(true);
+</script>
+</body>
+</html>
