@@ -474,12 +474,19 @@ function computeMachineFlags(rows){
 }
 
 function computeShiftActiveMachines(rs){
-  const sumRun = rs.reduce((s,r)=> s + (isNaN(r.machineRunHrs)?0:r.machineRunHrs), 0);
-  const validSched = rs.filter(r=>!isNaN(r.shiftPlannedHrs) && r.shiftPlannedHrs>0);
-  const avgSched = validSched.length>0 ? validSched.reduce((s,r)=>s+r.shiftPlannedHrs,0)/validSched.length : null;
-  const distinctDates = new Set(rs.map(r=>isoDate(r.date))).size;
-  if (!avgSched || distinctDates===0) return null;
-  return sumRun/(avgSched*distinctDates);
+  // Compute the ratio (sum run hrs / avg scheduled hrs) separately for each
+  // date, then average those daily ratios -- not one big ratio across the
+  // whole period. E.g. a 6-day period averages 6 individual daily values.
+  const byDate = groupBy(rs, r=>isoDate(r.date));
+  const dailyValues = [];
+  byDate.forEach((dayRows)=>{
+    const sumRun = dayRows.reduce((s,r)=> s + (isNaN(r.machineRunHrs)?0:r.machineRunHrs), 0);
+    const validSched = dayRows.filter(r=>!isNaN(r.shiftPlannedHrs) && r.shiftPlannedHrs>0);
+    const avgSched = validSched.length>0 ? validSched.reduce((s,r)=>s+r.shiftPlannedHrs,0)/validSched.length : null;
+    if (avgSched) dailyValues.push(sumRun/avgSched);
+  });
+  if (dailyValues.length===0) return null;
+  return dailyValues.reduce((a,b)=>a+b,0)/dailyValues.length;
 }
 
 function computeShiftSplit(rows){
@@ -585,9 +592,11 @@ function renderOverview(rows, period, refDate, range){
 
   const attainC = attainColor(kpi.attain);
   const attainPillClass = attainC==='green'?'good':(attainC==='amber'?'warn':'bad');
+  const shiftSplit = computeShiftSplit(rows);
+  const hasShiftAB = shiftSplit && shiftSplit['A'] && shiftSplit['B'];
 
   let html = '';
-  html += `<div class="kpi-row">
+  html += `<div class="kpi-row" style="${hasShiftAB ? 'grid-template-columns:repeat(5, 1fr);' : ''}">
     <div class="kpi">
       <div class="eyebrow">${period==='daily'?'Today':period==='weekly'?'This week':'This month'}</div>
       <div class="kpi-val num">${fmt(kpi.ok)} <small>pcs</small></div>
@@ -602,13 +611,29 @@ function renderOverview(rows, period, refDate, range){
       <div class="eyebrow">Rejected</div>
       <div class="kpi-val num">${fmt(kpi.rejected)} <small>pcs</small></div>
       <div class="kpi-sub">${fmtPct(kpi.rejPct,2)} reject rate</div>
+    </div>`;
+  if (hasShiftAB){
+    const a = shiftSplit['A'], b = shiftSplit['B'];
+    html += `
+    <div class="kpi">
+      <div class="eyebrow">Machines active \u2014 A</div>
+      <div class="kpi-val num">${a.activeMachines!==null?a.activeMachines.toFixed(1):'\u2014'} <small>/ ${MACHINE_FLEET_SIZE||'\u2014'}</small></div>
+      <div class="kpi-sub">${period!=='daily'?'avg/day, this period':'shift A, run-hrs basis'}</div>
     </div>
     <div class="kpi">
+      <div class="eyebrow">Machines active \u2014 B</div>
+      <div class="kpi-val num">${b.activeMachines!==null?b.activeMachines.toFixed(1):'\u2014'} <small>/ ${MACHINE_FLEET_SIZE||'\u2014'}</small></div>
+      <div class="kpi-sub">${period!=='daily'?'avg/day, this period':'shift B, run-hrs basis'}</div>
+    </div>`;
+  } else {
+    html += `
+    <div class="kpi">
       <div class="eyebrow">Machines active</div>
-      <div class="kpi-val num">${kpi.machinesActive} <small>/ ${MACHINE_FLEET_SIZE||'—'}</small></div>
-      <div class="kpi-sub">${MACHINE_FLEET_SIZE ? Math.round(kpi.machinesActive/MACHINE_FLEET_SIZE*100)+'% of fleet' : ''}</div>
-    </div>
-  </div>`;
+      <div class="kpi-val num">${kpi.machinesActive} <small>/ ${MACHINE_FLEET_SIZE||'\u2014'}</small></div>
+      <div class="kpi-sub">${MACHINE_FLEET_SIZE ? Math.round(kpi.machinesActive/MACHINE_FLEET_SIZE*100)+'% of fleet' : ''} ${shiftSplit===null ? '\u00b7 shift not logged' : ''}</div>
+    </div>`;
+  }
+  html += `</div>`;
 
   html += `<div class="card">
     <div class="card-head">
@@ -619,14 +644,13 @@ function renderOverview(rows, period, refDate, range){
     <div class="legend"><span><span class="sw" style="background:var(--orange);"></span>Current pace</span><span>Monthly requirement: ${fmt(monthlyTarget)} pcs \u00b7 ${monthWorkDays} working days this month</span></div>
   </div>`;
 
-  const shiftSplit = computeShiftSplit(rows);
   html += `<div class="grid2">
     <div class="card">
       <div class="card-head"><div><h2>OK production trend</h2><div class="sub">${period==='daily' ? 'Trailing 30 days' : period==='weekly' ? 'This week, day by day' : 'Every day this month'}</div></div></div>
       ${buildTrendSVG(period==='daily' ? computeDailySeries(addDays(refDate,-29), refDate) : computeDailySeries(range.start, range.end))}
     </div>
     <div class="card">`;
-  if (shiftSplit && shiftSplit['A'] && shiftSplit['B']){
+  if (hasShiftAB){
     const a = shiftSplit['A'], b = shiftSplit['B'];
     html += `<div class="card-head"><div><h2>Shift A vs Shift B</h2><div class="sub">This period</div></div></div>
       <div class="shift-row">
