@@ -36,6 +36,14 @@
   .err-msg{ margin-top:18px; color:var(--red); font-size:13px; max-width:480px; }
   .upload-note{ margin-top:26px; font-size:11.5px; color:var(--text3); max-width:480px; line-height:1.5; }
 
+  /* ===== PASSWORD SCREEN ===== */
+  #passwordScreen{ display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:80vh; text-align:center; }
+  #passwordScreen input{ width:280px; max-width:80vw; background:var(--panel); border:1px solid var(--line); color:var(--text); font-family:inherit; font-size:14px; padding:11px 14px; border-radius:8px; text-align:center; letter-spacing:1px; }
+  #passwordScreen input:focus{ outline:none; border-color:var(--orange); }
+  #passwordScreen button{ margin-top:12px; background:var(--orange); border:none; color:#1a1206; font-family:inherit; font-size:13px; font-weight:bold; padding:11px 24px; border-radius:8px; cursor:pointer; }
+  #passwordScreen button:hover{ opacity:0.9; }
+  #pwError{ color:var(--red); font-size:12px; margin-top:12px; display:none; }
+
   /* ===== APP SCREEN ===== */
   #appScreen{ display:none; }
   .topbar{ display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:18px; border-bottom:1px solid var(--line); margin-bottom:20px; }
@@ -137,8 +145,18 @@
 </head>
 <body>
 
+  <!-- ===== PASSWORD SCREEN ===== -->
+  <div id="passwordScreen">
+    <div class="upload-mark">P</div>
+    <h1>PRF production snapshot</h1>
+    <div class="sub">Enter the access password to view this dashboard.</div>
+    <input type="password" id="pwInput" placeholder="Password" autocomplete="off" />
+    <button onclick="checkPassword()">Enter</button>
+    <div id="pwError">Incorrect password \u2014 try again.</div>
+  </div>
+
   <!-- ===== UPLOAD SCREEN ===== -->
-  <div id="uploadScreen">
+  <div id="uploadScreen" style="display:none;">
     <div class="upload-mark">P</div>
     <h1>PRF production snapshot</h1>
     <div class="sub">Drop in the Daily Production Report workbook and get the daily, weekly, and monthly dashboard views automatically — no setup, nothing leaves your browser.</div>
@@ -222,7 +240,9 @@ function resolveColumns(headerRow){
     if (h.includes('reject') && h.includes('qty')) map.rejected = idx;
     if (h.includes('ok') && h.includes('prod') && h.includes('qty')) map.okQty = idx;
     if (h.includes('machine run')) map.machineRunHrs = idx;
+    if (h.includes('shift planned') || (h.includes('planned') && h.includes('hrs'))) map.shiftPlannedHrs = idx;
     if (h.includes('total') && h.includes('breakdown')) map.totalBreakdown = idx;
+    if (h.includes('final')) map.isFinalOp = idx;
     if (/^1[.\s]/.test(orig)) map.lossSetup = idx;
     if (/^2[.\s]/.test(orig)) map.lossMeeting = idx;
     if (/^3[.\s]/.test(orig)) map.lossPowerCut = idx;
@@ -263,6 +283,10 @@ function toNum(v){
 }
 function cleanStr(v){ return String(v===null||v===undefined?'':v).trim(); }
 function titleCase(s){ return s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()); }
+function isTruthy(v){
+  const s = cleanStr(v).toUpperCase();
+  return ['Y','YES','1','X','\u2713','TRUE','FINAL'].includes(s);
+}
 
 let ALL_ROWS = [];
 let MACHINE_FLEET_SIZE = 0;
@@ -298,7 +322,12 @@ function startOfWeek(d){ // Monday start
 function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0); }
 function daysInclusive(start,end){ return Math.round((end-start)/86400000)+1; }
-function isWorkingDay(d){ return d.getDay() !== 0; } // Sunday=0 excluded
+// National holidays (excluded from working-day counts, alongside Sundays).
+// Add more as 'YYYY-MM-DD' strings.
+const HOLIDAYS = ['2026-08-15']; // Independence Day -- confirm/adjust as needed
+function isoDate(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function isHoliday(d){ return HOLIDAYS.includes(isoDate(d)); }
+function isWorkingDay(d){ return d.getDay() !== 0 && !isHoliday(d); } // Sunday + holidays excluded
 function workingDaysInRange(start,end){
   let c=0; let d=new Date(start);
   while (d<=end){ if (isWorkingDay(d)) c++; d=addDays(d,1); }
@@ -444,6 +473,15 @@ function computeMachineFlags(rows){
   return out;
 }
 
+function computeShiftActiveMachines(rs){
+  const sumRun = rs.reduce((s,r)=> s + (isNaN(r.machineRunHrs)?0:r.machineRunHrs), 0);
+  const validSched = rs.filter(r=>!isNaN(r.shiftPlannedHrs) && r.shiftPlannedHrs>0);
+  const avgSched = validSched.length>0 ? validSched.reduce((s,r)=>s+r.shiftPlannedHrs,0)/validSched.length : null;
+  const distinctDates = new Set(rs.map(r=>isoDate(r.date))).size;
+  if (!avgSched || distinctDates===0) return null;
+  return sumRun/(avgSched*distinctDates);
+}
+
 function computeShiftSplit(rows){
   const withShift = rows.filter(r=>r.shift);
   if (withShift.length < rows.length*0.3) return null; // not enough shift data logged
@@ -451,6 +489,7 @@ function computeShiftSplit(rows){
   const out = {};
   g.forEach((rs, shift)=>{
     const k = computeKPIs(rs);
+    k.activeMachines = computeShiftActiveMachines(rs);
     out[shift] = k;
   });
   return out;
@@ -528,7 +567,14 @@ function renderOverview(rows, period, refDate, range){
   const kpi = computeKPIs(rows);
   const workDays = workingDaysInRange(range.start, range.end);
   const totalDays = daysInclusive(range.start, range.end);
-  const dailyAvg = totalDays>0 ? kpi.ok/totalDays : 0;
+
+  // "Daily average" should be prorated over working days that have actually
+  // elapsed (Sundays + holidays excluded), not the full period length --
+  // otherwise a part-way-through month/week understates the real average.
+  const elapsedEnd = range.end > MAX_DATE ? MAX_DATE : range.end;
+  const elapsedWorkDays = elapsedEnd >= range.start ? workingDaysInRange(range.start, elapsedEnd) : 0;
+  const elapsedCalendarDays = elapsedEnd >= range.start ? daysInclusive(range.start, elapsedEnd) : 0;
+  const dailyAvg = elapsedWorkDays>0 ? kpi.ok/elapsedWorkDays : 0;
 
   // path to target
   const monthWorkDays = workingDaysInRange(startOfMonth(refDate), endOfMonth(refDate));
@@ -549,8 +595,8 @@ function renderOverview(rows, period, refDate, range){
     </div>
     <div class="kpi">
       <div class="eyebrow">Daily average</div>
-      <div class="kpi-val num">${fmt(dailyAvg)} <small>pcs/day</small></div>
-      <div class="kpi-sub">${totalDays} day${totalDays>1?'s':''} in period \u00b7 ${workDays} working</div>
+      <div class="kpi-val num">${fmt(dailyAvg)} <small>pcs/working day</small></div>
+      <div class="kpi-sub">${elapsedWorkDays} working day${elapsedWorkDays!==1?'s':''} elapsed \u00b7 ${elapsedCalendarDays} calendar day${elapsedCalendarDays!==1?'s':''}</div>
     </div>
     <div class="kpi">
       <div class="eyebrow">Rejected</div>
@@ -584,8 +630,8 @@ function renderOverview(rows, period, refDate, range){
     const a = shiftSplit['A'], b = shiftSplit['B'];
     html += `<div class="card-head"><div><h2>Shift A vs Shift B</h2><div class="sub">This period</div></div></div>
       <div class="shift-row">
-        <div class="shift-card"><div class="lbl">Shift A</div><div class="big" style="color:var(--${attainColor(a.attain)});">${fmtPct(a.attain)}</div><div class="bar-mini"><i style="width:${Math.min(100,a.attain||0)}%; background:var(--${attainColor(a.attain)});"></i></div><div class="note">${fmt(a.ok)} pcs vs ${fmt(a.target)} target</div></div>
-        <div class="shift-card"><div class="lbl">Shift B</div><div class="big" style="color:var(--${attainColor(b.attain)});">${fmtPct(b.attain)}</div><div class="bar-mini"><i style="width:${Math.min(100,b.attain||0)}%; background:var(--${attainColor(b.attain)});"></i></div><div class="note">${fmt(b.ok)} pcs vs ${fmt(b.target)} target</div></div>
+        <div class="shift-card"><div class="lbl">Shift A</div><div class="big" style="color:var(--${attainColor(a.attain)});">${fmtPct(a.attain)}</div><div class="bar-mini"><i style="width:${Math.min(100,a.attain||0)}%; background:var(--${attainColor(a.attain)});"></i></div><div class="note">${fmt(a.ok)} pcs vs ${fmt(a.target)} target</div><div class="note" style="margin-top:4px; color:var(--text2); font-weight:bold;">${a.activeMachines!==null?a.activeMachines.toFixed(1):'\u2014'} active machines${period!=='daily'?'/day avg':''}</div></div>
+        <div class="shift-card"><div class="lbl">Shift B</div><div class="big" style="color:var(--${attainColor(b.attain)});">${fmtPct(b.attain)}</div><div class="bar-mini"><i style="width:${Math.min(100,b.attain||0)}%; background:var(--${attainColor(b.attain)});"></i></div><div class="note">${fmt(b.ok)} pcs vs ${fmt(b.target)} target</div><div class="note" style="margin-top:4px; color:var(--text2); font-weight:bold;">${b.activeMachines!==null?b.activeMachines.toFixed(1):'\u2014'} active machines${period!=='daily'?'/day avg':''}</div></div>
       </div>`;
   } else {
     const setterTable = computeSetterTable(rows).slice(0,5);
@@ -695,9 +741,20 @@ function toggleSkuRow(tr, idx, period){
   }
 }
 
+let skuViewMode = 'all'; // 'all' | 'final'
+let lastSkuRows = [], lastSkuPeriod = 'daily';
+
+function setSkuViewMode(mode){
+  skuViewMode = mode;
+  renderSKU(lastSkuRows, lastSkuPeriod);
+}
+
 function renderSKU(rows, period){
-  const families = computeFamilySummary(rows);
-  const skuGroups = computeSKUGroups(rows);
+  lastSkuRows = rows; lastSkuPeriod = period;
+  const hasFinalColumn = rows.some(r => r.isFinal !== null);
+  const filteredRows = skuViewMode==='final' ? rows.filter(r => r.isFinal === true) : rows;
+  const families = computeFamilySummary(filteredRows);
+  const skuGroups = computeSKUGroups(filteredRows);
   skuDetailCache = {};
 
   let html = `<div class="card">
@@ -713,7 +770,13 @@ function renderSKU(rows, period){
   html += `</div></div>`;
 
   html += `<div class="card">
-    <div class="card-head"><div><h2>SKU-level production</h2><div class="sub">Grouped by description (drawing) + operation \u00b7 click a row for machine detail \u00b7 red rows need attention</div></div></div>
+    <div class="card-head">
+      <div><h2>SKU-level production</h2><div class="sub">Grouped by description (drawing) + operation \u00b7 click a row for machine detail \u00b7 red rows need attention</div></div>
+      <div class="tabs" style="padding:2px;">
+        <div class="tab" style="padding:5px 12px; font-size:11.5px; ${skuViewMode==='all'?'background:var(--orange); color:#1a1206;':''}" onclick="setSkuViewMode('all')">All operations</div>
+        <div class="tab" style="padding:5px 12px; font-size:11.5px; ${skuViewMode==='final'?'background:var(--orange); color:#1a1206;':''}" onclick="setSkuViewMode('final')">Final operation only</div>
+      </div>
+    </div>
     <table>
       <tr><th>Part</th><th>Description</th><th>Operation</th><th>Machines running</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th><th class="r">Reject %</th></tr>`;
   skuGroups.forEach((g,idx)=>{
@@ -725,7 +788,13 @@ function renderSKU(rows, period){
     html += `<tr class="${cls}" onclick="toggleSkuRow(this, ${idx}, '${period}')"><td><span class="chev">&#9656;</span><span class="flag" style="background:var(--${c});"></span><span class="name">${g.partName}</span></td><td class="code">${g.description||'\u2014'}</td><td><span class="op-tag">${g.operation||'\u2014'}</span></td><td><span class="lines-tag">${machinesDisp} <span style="color:var(--text3);">(${nMach})</span></span></td><td class="r num">${fmt(g.ok)}</td><td class="r num">${fmt(g.target)}</td><td class="r"><div class="bar-cell"><div class="track2"><i style="width:${Math.min(100,g.attain||0)}%; background:var(--${c});"></i></div><span class="val">${fmtPct(g.attain)}</span></div></td><td class="r num">${fmt(g.rejected)}</td><td class="r">${fmtPct(g.rejPct,2)}</td></tr>
       <tr class="detail-row" style="display:none;"><td colspan="9"><div class="detail-panel"></div></td></tr>`;
   });
-  if (skuGroups.length===0) html += `<tr><td colspan="9" class="empty-note">No SKU data for this period</td></tr>`;
+  if (skuGroups.length===0 && skuViewMode==='all') html += `<tr><td colspan="9" class="empty-note">No SKU data for this period</td></tr>`;
+  if (skuGroups.length===0 && skuViewMode==='final'){
+    const msg = hasFinalColumn
+      ? 'No rows are flagged as the final operation for this period yet.'
+      : 'No "Final Operation" column found in this period\u2019s data \u2014 this view will fill in once that column is added and back-filled for these dates.';
+    html += `<tr><td colspan="9" class="empty-note">${msg}</td></tr>`;
+  }
   html += `</table></div>`;
 
   document.getElementById('skuSection').innerHTML = html;
@@ -759,6 +828,7 @@ function parseWorkbook(workbook){
         target: map.target!==undefined ? toNum(row[map.target]) : NaN,
         rejected: map.rejected!==undefined ? toNum(row[map.rejected]) : NaN,
         machineRunHrs: map.machineRunHrs!==undefined ? toNum(row[map.machineRunHrs]) : NaN,
+        shiftPlannedHrs: map.shiftPlannedHrs!==undefined ? toNum(row[map.shiftPlannedHrs]) : NaN,
         totalBreakdown: map.totalBreakdown!==undefined ? toNum(row[map.totalBreakdown]) : NaN,
         lossSetup: map.lossSetup!==undefined ? toNum(row[map.lossSetup]) : NaN,
         lossMeeting: map.lossMeeting!==undefined ? toNum(row[map.lossMeeting]) : NaN,
@@ -768,6 +838,7 @@ function parseWorkbook(workbook){
         lossNoMaterial: map.lossNoMaterial!==undefined ? toNum(row[map.lossNoMaterial]) : NaN,
         lossToolReset: map.lossToolReset!==undefined ? toNum(row[map.lossToolReset]) : NaN,
         lossMaintenance: map.lossMaintenance!==undefined ? toNum(row[map.lossMaintenance]) : NaN,
+        isFinal: map.isFinalOp!==undefined ? isTruthy(row[map.isFinalOp]) : null,
       });
     }
   });
@@ -806,7 +877,7 @@ function resetApp(){
   document.getElementById('fileInput').value = '';
   document.getElementById('errMsg').style.display = 'none';
   document.getElementById('dropzone').style.display = 'block';
-  document.getElementById('autoLoadNote').style.display = DRIVE_FILE_ID ? 'block' : 'none';
+  document.getElementById('autoLoadNote').style.display = (DRIVE_FILE_ID || APPS_SCRIPT_URL) ? 'block' : 'none';
   if (DRIVE_FILE_ID) tryAutoLoadFromDrive(false);
 }
 
@@ -839,7 +910,7 @@ function loadFromArrayBuffer(arrayBuffer, sourceLabel, isInitial){
     document.getElementById('fileInfoText').textContent = `${sourceLabel} \u00b7 ${rows.length.toLocaleString('en-IN')} rows \u00b7 ${MACHINE_FLEET_SIZE} machines \u00b7 updated ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}`;
     document.getElementById('uploadScreen').style.display = 'none';
     document.getElementById('appScreen').style.display = 'block';
-    document.getElementById('refreshBtn').style.display = DRIVE_FILE_ID ? 'inline-block' : 'none';
+    document.getElementById('refreshBtn').style.display = (DRIVE_FILE_ID || APPS_SCRIPT_URL) ? 'inline-block' : 'none';
     renderAll();
     return true;
   } catch(err){
@@ -862,12 +933,13 @@ function loadFile(file){
 // ============================================================
 // AUTO-LOAD FROM GOOGLE DRIVE / SHEETS (Tier 2 setup)
 // ============================================================
-// Paste the file's ID below (the long string in its share link, between
-// /d/ and /view or /edit) and make sure it's shared as "Anyone with the
-// link can view". Works whether Drive kept it as a real .xlsx file or
-// auto-converted it to a native Google Sheet \u2014 the tool tries both.
-// Leave blank to disable auto-load and always show the manual upload screen.
-const DRIVE_FILE_ID = '1j6C5UFpwfFnzENEJaBgVQVwg3-yA8_Yf';
+// Primary path: a small Google Apps Script "Web App" bridge (reliable,
+// avoids browser CORS restrictions on Google's export links). See
+// AppsScript_bridge.gs for the one-time setup. Paste its /exec URL below.
+// If left blank, the tool falls back to trying Google's export links
+// directly (works sometimes, but can be blocked by CORS in some setups).
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwRzD813KFVTf4Qg6SS_-8IDBTBKwWjKSZne4uo462bwaqxXemwHRY9HSMk58nu-aw/exec';
+const DRIVE_FILE_ID = '195nyNix1rfDbSy1ZJqVlmeGbhSL4B2i-tlLVql5nXh4';
 const AUTO_REFRESH_MINUTES = 10;
 let AUTO_REFRESH_TIMER = null;
 
@@ -878,30 +950,49 @@ function driveDownloadUrls(id){
   ];
 }
 
-function fetchFirstWorking(urls){
-  return urls.reduce((chain, url) => chain.catch(() =>
-    fetch(url, { cache: 'no-store' }).then(res => { if (!res.ok) throw new Error('HTTP '+res.status); return res.arrayBuffer(); })
-  ), Promise.reject());
+function base64ToArrayBuffer(base64){
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function fetchFirstWorking(loaders){
+  return loaders.reduce((chain, loader) => chain.catch(loader), Promise.reject());
+}
+
+function buildLoaders(){
+  const loaders = [];
+  if (APPS_SCRIPT_URL){
+    loaders.push(() => fetch(APPS_SCRIPT_URL, { cache:'no-store' })
+      .then(res => { if (!res.ok) throw new Error('HTTP '+res.status); return res.text(); })
+      .then(base64 => base64ToArrayBuffer(base64)));
+  }
+  driveDownloadUrls(DRIVE_FILE_ID).forEach(url => {
+    loaders.push(() => fetch(url, { cache:'no-store' })
+      .then(res => { if (!res.ok) throw new Error('HTTP '+res.status); return res.arrayBuffer(); }));
+  });
+  return loaders;
 }
 
 function tryAutoLoadFromDrive(isInitial){
-  if (!DRIVE_FILE_ID) return;
+  if (!DRIVE_FILE_ID && !APPS_SCRIPT_URL) return;
   const note = document.getElementById('autoLoadNote');
   if (isInitial && note) { note.style.display='block'; note.textContent = 'Loading latest data from Google Drive\u2026'; }
-  fetchFirstWorking(driveDownloadUrls(DRIVE_FILE_ID))
+  fetchFirstWorking(buildLoaders())
     .then(buf => {
       const ok = loadFromArrayBuffer(buf, 'Google Drive (auto)', isInitial);
       if (ok && !AUTO_REFRESH_TIMER){
         AUTO_REFRESH_TIMER = setInterval(()=>tryAutoLoadFromDrive(false), AUTO_REFRESH_MINUTES*60*1000);
       }
       if (!ok && isInitial && note){
-        note.textContent = 'Could not read the Drive file automatically \u2014 upload it manually below instead.';
+        note.textContent = 'Could not read the data automatically \u2014 upload it manually below instead.';
       }
     })
     .catch(err => {
-      console.warn('Drive auto-load failed:', err);
+      console.warn('Auto-load failed:', err);
       if (isInitial && note){
-        note.textContent = 'Could not reach Google Drive automatically (this can happen if the file isn\u2019t shared as "Anyone with the link") \u2014 upload it manually below instead.';
+        note.textContent = 'Could not reach Google Drive automatically (this can happen if the file isn\u2019t shared as "Anyone with the link", or if the browser is blocking cross-site requests) \u2014 upload it manually below instead.';
       }
     });
 }
@@ -921,8 +1012,52 @@ dropzone.addEventListener('drop', (e)=>{
   if (f) loadFile(f);
 });
 
+// ============================================================
+// PASSWORD GATE
+// ============================================================
+// Set your access password's SHA-256 hash below (not the plain password,
+// so it's not sitting in plain text in this public code). To set a new
+// password, ask Claude to update this, or compute it yourself: open any
+// browser console and run:
+//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourpassword'))
+//     .then(b => console.log(Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('')))
+const PASSWORD_HASH = '460282486005022794ec2f85a4dcc57d51167c4d02ab59e8898f8504be725de4';
+const AUTH_STORAGE_KEY = 'prf_dashboard_auth_ok';
+
+async function sha256Hex(text){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkPassword(){
+  const input = document.getElementById('pwInput').value;
+  const hash = await sha256Hex(input);
+  if (hash === PASSWORD_HASH){
+    localStorage.setItem(AUTH_STORAGE_KEY, '1');
+    revealApp();
+  } else {
+    document.getElementById('pwError').style.display = 'block';
+  }
+}
+document.getElementById('pwInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') checkPassword(); });
+
+function revealApp(){
+  document.getElementById('passwordScreen').style.display = 'none';
+  document.getElementById('uploadScreen').style.display = 'flex';
+  tryAutoLoadFromDrive(true);
+}
+
+function initAfterAuth(){
+  if (PASSWORD_HASH === 'CHANGE_ME' || localStorage.getItem(AUTH_STORAGE_KEY) === '1'){
+    document.getElementById('passwordScreen').style.display = 'none';
+    document.getElementById('uploadScreen').style.display = 'flex';
+    tryAutoLoadFromDrive(true);
+  }
+  // otherwise: password screen stays visible (it's the default), waiting for checkPassword()
+}
+
 // Attempt auto-load from Drive on page open (no-op if DRIVE_FILE_ID is blank)
-tryAutoLoadFromDrive(true);
+initAfterAuth();
 </script>
 </body>
 </html>
