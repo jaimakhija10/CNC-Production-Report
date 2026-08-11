@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PRF Production Snapshot</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -141,6 +142,49 @@
 
   .empty-note{ font-size:12px; color:var(--text3); padding:20px 0; text-align:center; }
   footer{ margin-top:22px; padding-top:16px; border-top:1px solid var(--line); font-size:10.5px; color:var(--text3); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+
+  .table-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table-scroll table{ min-width:560px; }
+  .detail-table.table-scroll table, .table-scroll .detail-table{ min-width:480px; }
+
+  /* ===== MOBILE ===== */
+  @media (max-width: 900px){
+    body{ padding:16px 14px 40px; }
+    h1{ font-size:16px; }
+    .topbar{ flex-direction:column; align-items:flex-start; gap:12px; padding-bottom:14px; margin-bottom:16px; }
+    .file-info{ flex-wrap:wrap; width:100%; gap:8px; }
+    .controls{ flex-direction:column; align-items:stretch; gap:10px; margin-bottom:14px; }
+    .tabs{ width:100%; }
+    .tab{ flex:1; text-align:center; padding:8px 6px; }
+    .datenav{ width:100%; justify-content:space-between; }
+    .datenav .lbl{ min-width:0; flex:1; }
+    .target-input{ width:100%; justify-content:space-between; }
+    .target-input input{ width:120px; }
+
+    .kpi-row{ grid-template-columns:repeat(2, 1fr) !important; gap:10px; }
+    .kpi{ padding:12px 14px; }
+    .kpi-val{ font-size:20px; }
+    .kpi-val small{ font-size:10px; }
+
+    .grid2{ grid-template-columns:1fr !important; }
+    .grid2b{ grid-template-columns:1fr !important; }
+    .shift-row{ grid-template-columns:1fr !important; }
+    .fam-row{ grid-template-columns:repeat(2, 1fr) !important; }
+
+    .card{ padding:14px 16px; }
+    .card-head{ flex-direction:column; align-items:flex-start; gap:10px; }
+
+    table{ font-size:11px; }
+    th{ font-size:9px; padding:0 6px 6px; }
+    td{ padding:7px 6px; }
+    .lines-tag{ white-space:nowrap; }
+
+    footer{ flex-direction:column; text-align:left; }
+  }
+  @media (max-width: 480px){
+    .kpi-row{ grid-template-columns:1fr !important; }
+    .fam-row{ grid-template-columns:1fr !important; }
+  }
 </style>
 </head>
 <body>
@@ -680,12 +724,12 @@ function renderOverview(rows, period, refDate, range){
   html += `</div>
     <div class="card">
       <div class="card-head"><div><h2>Setter performance</h2><div class="sub">% of own target, worst to best</div></div></div>
-      <table><tr><th>Setter</th><th class="r">Achieved</th><th class="r">Reject %</th></tr>`;
+      <div class="table-scroll"><table><tr><th>Setter</th><th class="r">Achieved</th><th class="r">Reject %</th></tr>`;
   setterTable.forEach(st=>{
     html += `<tr><td class="name">${st.setter}</td><td class="r"><div class="bar-cell"><div class="track2"><i style="width:${Math.min(100,st.attain||0)}%; background:var(--${attainColor(st.attain)});"></i></div><span class="val">${fmtPct(st.attain)}</span></div></td><td class="r">${fmtPct(st.rejPct,2)}</td></tr>`;
   });
   if (setterTable.length===0) html += `<tr><td colspan="3" class="empty-note">No setter data for this period</td></tr>`;
-  html += `</table></div></div>`;
+  html += `</table></div></div></div>`;
 
   const machineFlags = computeMachineFlags(rows).slice(0,5);
   html += `<div class="card">
@@ -735,7 +779,7 @@ function buildSkuDetailHTML(group, period){
       return `<tr><td>${r.machine}</td><td>${r.setter}</td><td><span class="shift-chip">${r.shift}</span></td><td>${r.operator}</td><td class="r">${fmt(r.ok)}</td><td class="r">${fmt(r.target)}</td><td class="r">${attain}%</td><td class="r">${fmt(r.rejected)}</td></tr>`;
     }).join('');
     return `<div class="detail-title">Machine &amp; shift breakdown</div>
-      <table class="detail-table"><tr><th>Machine</th><th>Setter</th><th>Shift</th><th>Operator</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th></tr>${rowsHtml}</table>
+      <div class="table-scroll"><table class="detail-table"><tr><th>Machine</th><th>Setter</th><th>Shift</th><th>Operator</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th></tr>${rowsHtml}</table></div>
       ${hasLoggedShift ? '' : '<div style="font-size:10px; color:var(--text3); margin-top:8px;">Shift label inferred from entry order \u2014 not logged directly for this day.</div>'}`;
   }
   const byMachine = groupBy(group.rows, r=>r.machineNo);
@@ -747,7 +791,7 @@ function buildSkuDetailHTML(group, period){
   recs.sort((a,b)=>b.ok-a.ok);
   let rowsHtml = recs.map(r=>`<tr><td>${r.machine}</td><td>${r.setter}</td><td class="r">${r.shifts}</td><td class="r">${fmt(r.ok)}</td><td class="r">${fmt(r.target)}</td><td class="r">${fmtPct(r.attain)}</td><td class="r">${fmt(r.rejected)}</td></tr>`).join('');
   return `<div class="detail-title">Machine breakdown, summed across period</div>
-    <table class="detail-table"><tr><th>Machine</th><th>Setter</th><th class="r">Shifts</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th></tr>${rowsHtml}</table>`;
+    <div class="table-scroll"><table class="detail-table"><tr><th>Machine</th><th>Setter</th><th class="r">Shifts</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th></tr>${rowsHtml}</table></div>`;
 }
 
 function toggleSkuRow(tr, idx, period){
@@ -801,7 +845,7 @@ function renderSKU(rows, period){
         <div class="tab" style="padding:5px 12px; font-size:11.5px; ${skuViewMode==='final'?'background:var(--orange); color:#1a1206;':''}" onclick="setSkuViewMode('final')">Final operation only</div>
       </div>
     </div>
-    <table>
+    <div class="table-scroll"><table>
       <tr><th>Part</th><th>Description</th><th>Operation</th><th>Machines running</th><th class="r">OK qty</th><th class="r">Target</th><th class="r">Achieved</th><th class="r">Rejected</th><th class="r">Reject %</th></tr>`;
   skuGroups.forEach((g,idx)=>{
     skuDetailCache[idx] = g;
@@ -819,7 +863,7 @@ function renderSKU(rows, period){
       : 'No "Final Operation" column found in this period\u2019s data \u2014 this view will fill in once that column is added and back-filled for these dates.';
     html += `<tr><td colspan="9" class="empty-note">${msg}</td></tr>`;
   }
-  html += `</table></div>`;
+  html += `</table></div></div>`;
 
   document.getElementById('skuSection').innerHTML = html;
 }
